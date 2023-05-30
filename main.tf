@@ -80,4 +80,97 @@ resource "aws_security_group" "usac-sg" {
      name  =  "usac-security-group"
    }
 }   
+
+module "s3_bucket" {
+  source = "terraform-aws-modules/s3-bucket/aws"
+  
+  count = length(var.buckets)
+  bucket        = "${var.buckets[count.index]}"
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+  versioning = {
+    enabled = true
+  }
+  force_destroy = true
+server_side_encryption_configuration = {
+    rule = {
+      apply_server_side_encryption_by_default = {
+
+      }
+    }
+}
+}
+resource "aws_iam_user" "bucket_user" {
+    count = length(var.buckets)
+    name = "${var.buckets[count.index]}-s3-bucket-user"    
+  }
+  resource "aws_iam_policy" "bucket_policy" { 
+    count = length(var.buckets)
+    name = "${var.buckets[count.index]}-s3-bucket-policy" 
+    policy = jsonencode(
+      {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": "arn:aws:s3:::${var.buckets[count.index]}/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListAllMyBuckets"
+            ],
+            "Resource": "arn:aws:s3:::${var.buckets[count.index]}/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+            ],
+            "Resource": "arn:aws:s3:::${var.buckets[count.index]}"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:DeleteObject",
+                "s3:DeleteObjectVersion"
+            ],
+            "Resource": "arn:aws:s3:::${var.buckets[count.index]}/*"
+        }
+    ]
+}
+    )
+    
+  }
+  resource "aws_iam_user_policy_attachment" "bucket_policy_attachment" {
+    count = length(var.buckets)
+    user = aws_iam_user.bucket_user[count.index].name
+    policy_arn = aws_iam_policy.bucket_policy[count.index].arn   
+  }
+  resource "aws_s3_bucket_policy" "bucket" {
+    count = length(var.buckets)
+    bucket = s3_bucket.buckets[count.index].id
+    policy = jsonencode({
+    "Version": "2012-10-17",
+    "Id": "Policy1643297892890",
+    "Statement": [
+        {
+            "Sid": "Stmt1643297888916",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS":  "arn:aws:iam::${var.id}:user/${var.buckets[count.index]}"
+            },
+            "Action": "s3:*",
+            "Resource": "arn:aws:s3:::${var.buckets[count.index]}"
+        }
+    ]
+})
+}
      
