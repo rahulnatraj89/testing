@@ -83,32 +83,36 @@ resource "aws_security_group" "usac-sg" {
 
 module "s3_bucket" {
   source = "terraform-aws-modules/s3-bucket/aws"
-  
+
   count = length(var.buckets)
-  bucket        = "${var.buckets[count.index]}"
+  bucket = var.buckets[count.index]
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
   versioning = {
     enabled = true
-  }
+}
   force_destroy = true
 server_side_encryption_configuration = {
     rule = {
       apply_server_side_encryption_by_default = {
-
+        sse_algorithm ="AES256"
       }
     }
 }
+tags = merge(var.tags,{
+    Name = "${var.buckets[count.index]}"
+  })
 }
+  
 resource "aws_iam_user" "bucket_user" {
     count = length(var.buckets)
-    name = "${var.buckets[count.index]}-s3-bucket-user"    
+    name = "${var.buckets[count.index]}"    
   }
   resource "aws_iam_policy" "bucket_policy" { 
     count = length(var.buckets)
-    name = "${var.buckets[count.index]}-s3-bucket-policy" 
+    name = "${var.buckets[count.index]}" 
     policy = jsonencode(
       {
     "Version": "2012-10-17",
@@ -116,14 +120,14 @@ resource "aws_iam_user" "bucket_user" {
         {
             "Effect": "Allow",
             "Action": "s3:*",
-            "Resource": "arn:aws:s3:::${var.buckets[count.index]}/*"
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}/*"
         },
         {
             "Effect": "Allow",
             "Action": [
                 "s3:ListAllMyBuckets"
             ],
-            "Resource": "arn:aws:s3:::${var.buckets[count.index]}/*"
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}/*"
         },
         {
             "Effect": "Allow",
@@ -131,7 +135,7 @@ resource "aws_iam_user" "bucket_user" {
                 "s3:ListBucket",
                 "s3:GetBucketLocation"
             ],
-            "Resource": "arn:aws:s3:::${var.buckets[count.index]}"
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}"
         },
         {
             "Effect": "Allow",
@@ -142,7 +146,7 @@ resource "aws_iam_user" "bucket_user" {
                 "s3:DeleteObject",
                 "s3:DeleteObjectVersion"
             ],
-            "Resource": "arn:aws:s3:::${var.buckets[count.index]}/*"
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}/*"
         }
     ]
 }
@@ -154,9 +158,10 @@ resource "aws_iam_user" "bucket_user" {
     user = aws_iam_user.bucket_user[count.index].name
     policy_arn = aws_iam_policy.bucket_policy[count.index].arn   
   }
-  resource "aws_s3_bucket_policy" "bucket" {
+
+  resource "aws_s3_bucket_policy" "s3_bucket" {
     count = length(var.buckets)
-    bucket = s3_bucket.buckets[count.index].id
+    bucket = var.buckets[count.index]
     policy = jsonencode({
     "Version": "2012-10-17",
     "Id": "Policy1643297892890",
@@ -165,12 +170,11 @@ resource "aws_iam_user" "bucket_user" {
             "Sid": "Stmt1643297888916",
             "Effect": "Allow",
             "Principal": {
-                "AWS":  "arn:aws:iam::${var.id}:user/${var.buckets[count.index]}"
+                "AWS":  "arn:aws-us-gov:iam::${var.id}:user/${aws_iam_user.bucket_user[count.index].name}"
             },
             "Action": "s3:*",
-            "Resource": "arn:aws:s3:::${var.buckets[count.index]}"
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}"
         }
     ]
 })
 }
-     
