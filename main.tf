@@ -113,8 +113,8 @@ tags = merge(var.tags,{
 resource "aws_iam_user" "bucket_user" {
     count = length(var.buckets)
     name = "${var.buckets[count.index]}"    
-  }
-  resource "aws_iam_policy" "bucket_policy" { 
+}
+resource "aws_iam_policy" "bucket_policy" { 
     count = length(var.buckets)
     name = "${var.buckets[count.index]}" 
     policy = jsonencode(
@@ -155,8 +155,7 @@ resource "aws_iam_user" "bucket_user" {
     ]
 }
     )
-    
-  }
+ }
   resource "aws_iam_user_policy_attachment" "bucket_policy_attachment" {
     count = length(var.buckets)
     user = aws_iam_user.bucket_user[count.index].name
