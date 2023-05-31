@@ -84,7 +84,11 @@ resource "aws_security_group" "usac-sg" {
 module "s3_bucket" {
   source = "terraform-aws-modules/s3-bucket/aws"
 
-  providers = aws.primary
+  version = "2.10.0"
+  providers = {
+    aws.primary   = aws.primary
+    aws.secondary = aws.secondary
+  }
   count = length(var.buckets)
   bucket = var.buckets[count.index]
   block_public_acls       = true
@@ -106,8 +110,79 @@ tags = merge(var.tags,{
     Name = "${var.buckets[count.index]}"
   })
 }
+resource "aws_iam_user" "bucket_user" {
+    count = length(var.buckets)
+    name = "${var.buckets[count.index]}"    
+  }
+  resource "aws_iam_policy" "bucket_policy" { 
+    count = length(var.buckets)
+    name = "${var.buckets[count.index]}" 
+    policy = jsonencode(
+      {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListAllMyBuckets"
+            ],
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+            ],
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:DeleteObject",
+                "s3:DeleteObjectVersion"
+            ],
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}/*"
+        }
+    ]
+}
+    )
+    
+  }
+  resource "aws_iam_user_policy_attachment" "bucket_policy_attachment" {
+    count = length(var.buckets)
+    user = aws_iam_user.bucket_user[count.index].name
+    policy_arn = aws_iam_policy.bucket_policy[count.index].arn   
+  }
+
+  resource "aws_s3_bucket_policy" "s3_bucket" {
+    count = length(var.buckets)
+    bucket = var.buckets[count.index]
+    policy = jsonencode({
+    "Version": "2012-10-17",
+    "Id": "Policy1643297892890",
+    "Statement": [
+        {
+            "Sid": "Stmt1643297888916",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS":  "arn:aws-us-gov:iam::${var.id}:user/${aws_iam_user.bucket_user[count.index].name}"
+            },
+            "Action": "s3:*",
+            "Resource": "arn:aws-us-gov:s3:::${var.buckets[count.index]}"
+        }
+    ]
+})
+}
 data "aws_iam_policy_document" "secondary" {
-  provider = aws.secondary
   count = length(var.buckets)
   name = "${var.buckets[count.index]}" 
   statement {
@@ -116,11 +191,10 @@ data "aws_iam_policy_document" "secondary" {
       "s3:ReplicateDelete",
       "s3:ReplicateTags",
     ]
-    resources = ["${aws_s3_bucket.secondary.arn}/*"]
+    resources = ["${aws_s3_bucket.secondary[count.index].arn}/*"]
   }
 }
 data "aws_iam_policy_document" "s3-assume-role" {
-  provider = aws.primary
   count = length(var.buckets)
   name = "${var.buckets[count.index]}"
   statement {
@@ -132,26 +206,24 @@ data "aws_iam_policy_document" "s3-assume-role" {
   }
 }
 resource "aws_s3_bucket_replication_configuration" "primary" {
-  provider = aws.primary
   count = length(var.buckets)
   name = "${var.buckets[count.index]}"
-  depends_on = [aws_s3_bucket_versioning.primary]
-  role   = aws_iam_role.replication.arn
-  bucket = aws_s3_bucket.primary.bucket
+  depends_on = [aws_s3_bucket_versioning.primary[count.index]]
+  role   = aws_iam_role.replication[count.index].arn
+  bucket = aws_s3_bucket.primary[count.index].bucket
   rule {
-    id = aws_s3_bucket.secondary.bucket
+    id = aws_s3_bucket.secondary[count.index].bucket
     filter {} 
     status = "Enabled"
     delete_marker_replication {
       status = "Enabled"
     }
     destination {
-      bucket = aws_s3_bucket.secondary.arn
+      bucket = aws_s3_bucket.secondary[count.index].arn
     }
   }
 }
 data "aws_iam_policy_document" "primary" {
-  provider = aws.primary
   count = length(var.buckets)
   name = "${var.buckets[count.index]}"
   statement {
@@ -171,26 +243,20 @@ data "aws_iam_policy_document" "primary" {
   }
 }
 resource "aws_iam_role" "replication" {
-  provider = aws.primary
   count = length(var.buckets)
   name = "${var.buckets[count.index]}"
-  #name               = "s3-${var.primary_name}-replication"
-  assume_role_policy = data.aws_iam_policy_document.s3-assume-role.json
+  assume_role_policy = data.aws_iam_policy_document.s3-assume-role[count.index].json
 }
 resource "aws_iam_role_policy" "replication-primary" {
-  provider = aws.primary
   count = length(var.buckets)
-  name = "${var.buckets[count.index]}"
-  name   = "primary"
-  role   = aws_iam_role.replication.name
-  policy = data.aws_iam_policy_document.primary.json
+  name = "${var.buckets[count.index]}-primary"
+  role   = aws_iam_role.replication[count.index].name
+  policy = data.aws_iam_policy_document.primary[count.index].json
 }
 resource "aws_iam_role_policy" "replication-secondary" {
-  provider = aws.primary
   count = length(var.buckets)
-  name = "${var.buckets[count.index]}"
-  name   = "secondary"
-  role   = aws_iam_role.replication.name
-  policy = data.aws_iam_policy_document.secondary.json
+  name = "${var.buckets[count.index]}-secondary"
+  role   = aws_iam_role.replication[count.index].name
+  policy = data.aws_iam_policy_document.secondary[count.index].json
 }
 
