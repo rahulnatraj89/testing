@@ -113,6 +113,14 @@ resource "aws_cloudwatch_metric_alarm" "app1_cpu_low_alarm" {
   }
 }
 
+#!/bin/bash
+/USAC/usacfirstboot-cloudinit.sh cgr-stg-tc-9833.clouddev.loc
+
+# Associate Elastic IP
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+ALLOCATION_ID="your_eip_allocation_id"  # Replace with your EIP allocation ID
+
+aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $ALLOCATION_ID --region your_aws_region
 
 
 
